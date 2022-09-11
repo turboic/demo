@@ -1,0 +1,64 @@
+kubectl patch storageclass managed-nfs-storage -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+
+
+yum install -y nfs-utils
+echo "/data/nfs-share/ *(insecure,rw,sync,no_root_squash)" > /etc/exports
+mkdir -p /data/nfs-share/
+systemctl enable rpcbind --now
+systemctl enable nfs-server --now
+exportfs -r
+exportfs
+kubectl patch storageclass managed-nfs-storage -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+
+
+问题0/1 nodes are available: 1 node(s) had volume node affinity conflict.
+排查
+
+查看日志
+ kubectl logs -f nfs-client-provisioner-87486fbf6-tjls8
+ 
+ 出现下面的信息
+  Could not construct reference to: '&v1.Endpoints{TypeMeta:v1.TypeMeta{Kind:"", APIVersion:""}, ObjectMeta:v1.ObjectMeta{Name:"fuseim.pri-ifs", GenerateName:"", Namespace:"default", SelfLink:"", UID:"bbbfd0d5-6376-4c00-b678-cbdb523f174a", ResourceVersion:"3642", Generation:0, CreationTimestamp:v1.Time{Time:time.Time{wall:0x0, ext:63797861675, loc:(*time.Location)(0x1956800)}}, DeletionTimestamp:(*v1.Time)(nil), DeletionGracePeriodSeconds:(*int64)(nil), Labels:map[string]string(nil), Annotations:map[string]string{"control-plane.alpha.kubernetes.io/leader":"{\"holderIdentity\":\"nfs-client-provisioner-87486fbf6-tjls8_160b68fd-2c08-11ed-90d5-2ea1352c5800\",\"leaseDurationSeconds\":15,\"acquireTime\":\"2022-09-04T04:14:35Z\",\"renewTime\":\"2022-09-04T04:14:35Z\",\"leaderTransitions\":0}"}, OwnerReferences:[]v1.OwnerReference(nil), Initializers:(*v1.Initializers)(nil), Finalizers:[]string(nil), ClusterName:""}, Subsets:[]v1.EndpointSubset(nil)}' due to: 'selfLink was empty, can't make reference'. Will not report event: 'Normal' 'LeaderElection' 'nfs-client-provisioner-87486fbf6-tjls8_160b68fd-2c08-11ed-90d5-2ea1352c5800 became leader'
+  
+  
+  
+  解决办法
+  selfLink was empty 在k8s集群 v1.20之前都存在，在v1.20之后被删除，需要在/etc/kubernetes/manifests/kube-apiserver.yaml 添加参数
+增加 - --feature-gates=RemoveSelfLink=false
+
+  修改后内容：保存后等待完成
+  spec:
+  containers:
+  - command:
+    - kube-apiserver
+    - --advertise-address=10.10.10.99
+    - --feature-gates=RemoveSelfLink=false
+    - --allow-privileged=true
+    - --audit-log-maxage=30
+    - --audit-log-maxbackup=10
+    - --audit-log-maxsize=100
+    - --authorization-mode=Node,RBAC
+    - --bind-address=0.0.0.0
+    - --client-ca-file=/etc/kubernetes/pki/ca.crt
+    - --enable-admission-plugins=NodeRestriction
+    - --enable-bootstrap-token-auth=true
+    - --etcd-cafile=/etc/ssl/etcd/ssl/ca.pem
+    - --etcd-certfile=/etc/ssl/etcd/ssl/node-master.pem
+    - --etcd-keyfile=/etc/ssl/etcd/ssl/node-master-key.pem
+    - --etcd-servers=https://10.10.10.99:2379
+    - --feature-gates=RotateKubeletServerCertificate=true,TTLAfterFinished=true,ExpandCSIVolumes=true,CSIStorageCapacity=true
+    - --kubelet-client-certificate=/etc/kubernetes/pki/apiserver-kubelet-client.crt
+    - --kubelet-client-key=/etc/kubernetes/pki/apiserver-kubelet-client.key
+    - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+    - --proxy-client-cert-file=/etc/kubernetes/pki/front-proxy-client.crt
+    - --proxy-client-key-file=/etc/kubernetes/pki/front-proxy-client.key
+    - --requestheader-allowed-names=front-proxy-client
+    - --requestheader-client-ca-file=/etc/kubernetes/pki/front-proxy-ca.crt
+    - --requestheader-extra-headers-prefix=X-Remote-Extra-
+    - --requestheader-group-headers=X-Remote-Group
+    - --requestheader-username-headers=X-Remote-User
+
+
+

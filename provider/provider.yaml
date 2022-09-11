@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dubbo-starter-provider
+  namespace: skywalking
+  labels: 
+    app: dubbo-starter-provider
+spec: 
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dubbo-starter-provider
+  template:
+    metadata:
+      labels:
+        app: dubbo-starter-provider
+    spec:
+      initContainers:
+        - name: skywalking-agent-provider
+          image: zhxl1989/skywalking-agent:1.0
+          imagePullPolicy: Always
+          workingDir: /
+          command: ["sh"]
+          args:
+            [
+              "-c",
+              "mkdir -p /skywalking/agent && cp -r /usr/skywalking/agent/* /skywalking/agent",
+            ]
+          volumeMounts:
+            - name: skywalking-agent
+              mountPath: /skywalking/agent
+      containers:
+        - name: app
+          image: zhxl1989/dubbo-starter-provider:0.0.1
+          imagePullPolicy: Always
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: -javaagent:/usr/skywalking/agent/skywalking-agent.jar
+            - name: SW_AGENT_NAME
+              value: app
+            - name: SW_AGENT_COLLECTOR_BACKEND_SERVICES
+              value: skywalking-oap.skywalking.svc.cluster.local:11800
+            - name: SERVER_PORT
+              value: "9998"
+          resources:
+            limits:
+              memory: 2000Mi
+            requests:
+              memory: 1000Mi
+          ports:
+            - name: http
+              containerPort: 9998
+            - name: dubbo
+              containerPort: 20880
+              protocol: TCP
+          volumeMounts:
+            - name: date
+              mountPath: /etc/localtime
+            - name: skywalking-agent
+              mountPath: /usr/skywalking/agent
+      volumes:
+        - name: date
+          hostPath:
+            path: /etc/localtime
+        - name: skywalking-agent
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dubbo-starter-provider
+  namespace: skywalking
+  labels:
+    app: dubbo-starter-provider
+spec:
+  sessionAffinity: "ClientIP"
+  ports:
+    - port: 9998
+      name: server
+      targetPort: 9998
+    - port: 20880
+      name: dubbo
+      targetPort: 20880
+  selector:
+    app: dubbo-starter-provider
+  type: ClusterIP

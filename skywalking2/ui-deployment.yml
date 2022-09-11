@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skywalking-ui
+  namespace: skywalking
+  labels:
+    app: skywalking-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: skywalking-ui
+  template:
+    metadata:
+      labels:
+        app: skywalking-ui
+    spec:
+      containers:
+      - name: skywalking-ui
+        image: apache/skywalking-ui:8.5.0
+        ports:
+        - containerPort: 8080
+          name: skywalking-ui
+        resources:
+          requests:
+            memory: 1Gi
+          limits:
+            memory: 1Gi
+        env:
+        - name: SW_OAP_ADDRESS
+          value: skywalking-oap:12800
+        volumeMounts:
+        - mountPath: /etc/localtime
+          name: volume-localtime
+      volumes:
+        - hostPath:
+            path: /etc/localtime
+            type: ''
+          name: volume-localtime

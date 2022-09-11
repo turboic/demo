@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: skywalking
+spec:
+  selector:
+    matchLabels:
+      app: app
+  replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      initContainers:
+        - image: zhxl1989/skywalking-agent:2.0
+          name: skywalking-agent2
+          imagePullPolicy: IfNotPresent
+          workingDir: /
+          command: ["sh"]
+          args:
+            [
+              "-c",
+              "mkdir -p /skywalking/agent && cp -r /usr/skywalking/agent/* /skywalking/agent",
+            ]
+          volumeMounts:
+            - mountPath: /skywalking/agent
+              name: skywalking-agent
+      containers:
+        - name: app2
+          #这里的镜像也可以使用1.0的版本
+          image: zhxl1989/app:2.0
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: -javaagent:/usr/skywalking/agent/skywalking-agent.jar
+            - name: SW_AGENT_NAME
+              value: app
+            - name: SW_AGENT_COLLECTOR_BACKEND_SERVICES
+              value: skywalking-oap.skywalking.svc.cluster.local:11800
+            - name: SERVER_PORT
+              value: "9999"
+          volumeMounts:
+            - mountPath: /usr/skywalking/agent
+              name: skywalking-agent
+      volumes:
+        - name: skywalking-agent
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  namespace: skywalking
+  labels:
+    app: app
+spec:
+  sessionAffinity: "ClientIP"
+  ports:
+    - name: http
+      port: 9999
+      protocol: TCP
+      targetPort: 9999
+      nodePort: 30888
+  selector:
+    app: app
+  type: NodePort
+
